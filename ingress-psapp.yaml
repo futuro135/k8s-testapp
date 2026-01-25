@@ -1,0 +1,19 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: psapp
+  namespace: default
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: asus.loc
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: psapp
+            port:
+              number: 80
+
