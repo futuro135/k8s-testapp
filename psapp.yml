@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: psapp
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: psapp
+  template:
+    metadata:
+      labels:
+        app: psapp
+    spec:
+      containers:
+      - name: psapp
+        image: futuro135/psapp:latest
+        ports:
+        - containerPort: 8000
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 5
+          periodSeconds: 5
