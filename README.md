@@ -40,6 +40,100 @@ docker build -t host-info-api .
 docker run -d -p 8000:8000 --name host-info-api host-info-api
 ```
 
+### Запуск манифестов в Kubernetes на Docker Desktop (MacBook)
+
+Контейнер запускается из **локально собранного образа** (без pull из registry).
+
+1. **Включите Kubernetes в Docker Desktop**
+   - Откройте **Docker Desktop** → **Settings** (шестерёнка) → **Kubernetes**
+   - Включите **Enable Kubernetes** и нажмите **Apply & Restart**
+   - Дождитесь, пока кластер поднимется (индикатор станет зелёным)
+
+2. **Соберите образ локально** (в каталоге проекта):
+   ```bash
+   docker build -t psapp:local .
+   ```
+   В манифесте `psapp.yml` указаны `image: psapp:local` и `imagePullPolicy: Never`, поэтому Kubernetes возьмёт образ из локального Docker.
+
+3. **Примените манифесты:**
+   ```bash
+   # Deployment (под с приложением)
+   kubectl apply -f psapp.yml
+
+   # Service (NodePort для доступа с хоста)
+   kubectl apply -f service-nodeport.yaml
+   ```
+
+4. **Проверьте, что под и сервис созданы:**
+   ```bash
+   kubectl get pods -l app=psapp
+   kubectl get svc psapp
+   ```
+
+5. **Доступ к приложению**
+   - В Docker Desktop Kubernetes NodePort обычно доступен на **localhost**. Откройте в браузере или проверьте:
+     ```bash
+     curl http://localhost:30011/
+     ```
+   - Если `localhost:30011` не отвечает, используйте **port-forward**:
+     ```bash
+     kubectl port-forward svc/psapp 30011:8000
+     ```
+     Затем в другом терминале: `curl http://localhost:30011/`
+
+**Остановка:**
+```bash
+kubectl delete -f service-nodeport.yaml
+kubectl delete -f psapp.yml
+```
+
+### Деплой при пуше в GitLab (на локальный k8s)
+
+Есть два варианта: **Runner в самом Kubernetes** (удобно, всё в одном кластере) или **Runner на хосте** (shell, без registry).
+
+---
+
+#### Вариант 1: Runner запущен в вашем k8s (рекомендуется)
+
+Runner работает как поды в кластере; при пуше образ собирается через Kaniko, пушится в GitLab Container Registry и деплоится в тот же кластер.
+
+1. **Создайте runner в GitLab** и получите токен:
+   - В проекте: **Settings → CI/CD → Runners → Expand → New project runner**
+   - Выберите тег, например **`local-k8s`**, создайте runner и скопируйте **Runner token**.
+
+2. **Подставьте токен в values** и установите Runner через Helm:
+   ```bash
+   # В gitlab-runner/values.yaml замените ПОДСТАВЬТЕ_ТОКЕН_ИЗ_GITLAB на ваш runnerToken
+   helm repo add gitlab https://charts.gitlab.io
+   helm repo update
+   kubectl create namespace gitlab-runner --dry-run=client -o yaml | kubectl apply -f -
+   helm install gitlab-runner gitlab/gitlab-runner -n gitlab-runner -f gitlab-runner/values.yaml
+   ```
+
+3. **Выдайте права на деплой в namespace default** (job-поды runner'а должны применять манифесты в `default`):
+   ```bash
+   kubectl apply -f gitlab-runner/rbac-deploy.yaml
+   ```
+
+4. **Включите Container Registry** в проекте GitLab (Settings → General → Visibility → CI/CD → Container registry: Enabled), чтобы образы можно было пушить и тянуть.
+
+После этого при пуше в `main`/`master`:
+- **build** — Kaniko соберёт образ и загрузит его в GitLab Container Registry;
+- **deploy** — под с `kubectl` применит манифесты в namespace `default` (образ подставится из registry).
+
+Приложение будет доступно по `http://localhost:30011/`.
+
+**Если репозиторий приватный:** в namespace `default` создайте secret для pull из GitLab Registry и добавьте `imagePullSecrets` в Deployment (см. [документацию GitLab](https://docs.gitlab.com/ee/ci/docker/using_kaniko.html)).
+
+---
+
+#### Вариант 2: Runner на хосте (shell executor)
+
+Runner работает на вашем Mac; образ собирается локально как `psapp:local`, без registry.
+
+1. Установите GitLab Runner на Mac (`brew install gitlab-runner`), зарегистрируйте его с **executor = shell** и тегом **`local-k8s`** ([документация GitLab](https://docs.gitlab.com/runner/register/)).
+2. Для этого варианта в `.gitlab-ci.yml` нужны job'ы без Kaniko: **build** — `docker build -t psapp:local .`, **deploy** — `kubectl apply -f psapp.yml -f service-nodeport.yaml` (образ в манифесте остаётся `psapp:local`).
+
 ### Использование в Kubernetes
 
 Создайте deployment:
@@ -61,7 +155,7 @@ spec:
     spec:
       containers:
       - name: host-info-api
-        image: futuro135/host-info-api:latest
+        image: host-info-api:latest
         ports:
         - containerPort: 8000
         livenessProbe:

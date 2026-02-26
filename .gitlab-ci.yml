@@ -1,0 +1,56 @@
+# Деплой на локальный Kubernetes при пуше в GitLab.
+#
+# Вариант A — Runner в k8s (Kubernetes executor): использует тег "local-k8s",
+#   собирает образ через Kaniko в GitLab Container Registry, деплоит в тот же кластер.
+# Вариант B — Runner на хосте (shell executor): тот же тег "local-k8s",
+#   собирает образ psapp:local и деплоит без registry (см. README).
+#
+# Ниже настроено под Runner в k8s (вариант A). Для варианта B см. README.
+
+stages:
+  - build
+  - deploy
+
+variables:
+  # Образ будет в GitLab Container Registry
+  IMAGE_TAG: $CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA
+
+# --- Сборка образа в кластере (Kaniko), пуш в GitLab CR ---
+build:
+  stage: build
+  image:
+    name: gcr.io/kaniko-project/executor:debug
+    entrypoint: [""]
+  script:
+    - mkdir -p /kaniko/.docker
+    - |
+      echo "{\"auths\":{\"$CI_REGISTRY\":{\"auth\":\"$(printf \"%s:%s\" \"$CI_REGISTRY_USER\" \"$CI_JOB_TOKEN\" | base64 | tr -d '\n')\"}}}" > /kaniko/.docker/config.json
+    - /kaniko/executor
+      --context "${CI_PROJECT_DIR}"
+      --dockerfile "${CI_PROJECT_DIR}/Dockerfile"
+      --destination "${IMAGE_TAG}"
+  tags:
+    - local-k8s
+  only:
+    - main
+    - master
+
+# --- Деплой в тот же кластер (kubectl из пода с in-cluster config) ---
+deploy:
+  stage: deploy
+  image:
+    name: bitnami/kubectl:latest
+    entrypoint: [""]
+  script:
+    # Подставляем образ из registry в манифест и применяем
+    - |
+      sed -e "s|image: psapp:local|image: ${IMAGE_TAG}|" \
+          -e "s|imagePullPolicy: Never|imagePullPolicy: IfNotPresent|" \
+          psapp.yml | kubectl apply -f -
+    - kubectl apply -f service-nodeport.yaml
+    - kubectl rollout status deployment/psapp --timeout=120s
+  tags:
+    - local-k8s
+  only:
+    - main
+    - master

@@ -1,0 +1,27 @@
+# Values для установки GitLab Runner в локальный Kubernetes (Helm).
+# Перед установкой: подставьте runnerToken из GitLab (Settings → CI/CD → Runners → New project runner → Create runner, скопировать token).
+
+runnerToken: "ПОДСТАВЬТЕ_ТОКЕН_ИЗ_GITLAB"
+
+rbac:
+  create: true
+
+# Тег, на который откликается pipeline (.gitlab-ci.yml)
+tags: "local-k8s"
+
+# Один инстанс runner'а достаточно для локального кластера
+replicas: 1
+
+# Job-поды создаются в том же namespace, что и runner
+runners:
+  config: |
+    [[runners]]
+      [runners.kubernetes]
+        namespace = "gitlab-runner"
+        image = "alpine:latest"
+        job_timeout = 600
+
+# Для приватного GitLab Container Registry (если репозиторий приватный)
+# раскомментируйте и задайте secret с registry credentials:
+# imagePullSecrets:
+#   - name: gitlab-registry

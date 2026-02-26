@@ -14,7 +14,8 @@ spec:
     spec:
       containers:
       - name: psapp
-        image: futuro135/psapp:latest
+        image: psapp:local
+        imagePullPolicy: Never
         ports:
         - containerPort: 8000
         livenessProbe:

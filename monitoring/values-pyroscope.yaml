@@ -1,0 +1,19 @@
+# Pyroscope — один инстанс (single binary), локальный тест на Mac
+# Repo: grafana/pyroscope (Grafana Helm repo)
+
+persistence:
+  enabled: true
+  size: 10Gi
+  storageClass: hostpath  # для Docker Desktop / локального K8s
+
+# Доступ внутри кластера: http://pyroscope.monitoring.svc.cluster.local:4040
+service:
+  type: ClusterIP
+  port: 4040
+
+# Опционально: ingress для доступа снаружи
+# ingress:
+#   enabled: true
+#   ingressClassName: nginx
+#   hosts:
+#     - pyroscope.asus.loc
